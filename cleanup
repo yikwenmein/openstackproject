@@ -1,2 +1,268 @@
 #!/bin/bash
 
+# Check if the necessary arguments are provided
+if [ $# -lt 3 ]; then
+    echo "Error: Please specify the openrc, tag, and ssh_key as ar6guments to install"
+    echo "For exmple: ./install openrc tag sshkey"
+    exit 1
+fi
+openrc_sr=${1}     # openrc access file
+tag_sr=${2}        # tag for identification of items
+ssh_key_path=${3}  # the ssh_key
+no_of_servers=$(grep -E '[0-9]' servers.conf) # number of nodes from servers.conf
+
+
+# Get the number of nodes from servers.conf
+no_of_servers=$(grep -E '[0-9]' servers.conf)
+
+# Record the current time
+cd_time=$(date)
+echo "$cd_time Cleaning up $tag_sr using $openrc_sr"
+
+# Source the openrc file
+source "$openrc_sr"
+
+# Define variables
+natverk_namn="${tag_sr}_network"
+sr_subnet="${tag_sr}_subnet"
+sr_keypair="${tag_sr}_key"
+sr_router="${tag_sr}_router"
+sr_security_group="${tag_sr}_security_group"
+sr_haproxy_server="${tag_sr}_proxy"
+sr_bastion_server="${tag_sr}_bastion"
+sr_server="${tag_sr}_dev"
+
+sshconfig="config"
+knownhosts="known_hosts"
+hostsfile="hosts"
+fip2=$(cat floating_ip2)
+
+# Retrieve and delete servers
+servers=$(openstack server list --name "$tag_sr" -c ID -f value)
+server_count=$(echo "$servers" | wc -l)
+
+if [ -n "$servers" ]; then
+    echo "$(date) $server_count nodes, to be removed"
+    for server_id in $servers; do
+        openstack server delete "$server_id"
+    done
+    echo "$(date) $server_count nodes have been removed"
+else
+    echo "$(date) No nodes to remove"
+fi
+
+# Delete the keypair
+keypairs=$(openstack keypair list -f value -c Name | grep "$tag_sr*")
+
+if [ -n "$keypairs" ]; then
+    for key in $keypairs; do  
+        openstack keypair delete "$key"
+    done
+    echo "$(date) Removing $sr_keypair key"
+else
+    echo "$(date) No keypair to remove."
+fi
+
+# Delete floating IPs
+floating_ips=$(openstack floating ip list --status DOWN -f value -c "Floating IP Address")
+
+if [ -n "$floating_ips" ]; then
+    for fip in $floating_ips; do
+        openstack floating ip delete "$fip"
+    done
+    echo "$(date) Removing all the floating IPs"
+else
+    echo "$(date) No floating IPs to delete"
+fi
+
+# Delete subnets
+subnet_ids=$(openstack subnet list --tag "$tag_sr" -c ID -f value)
+
+if [ -n "$subnet_ids" ]; then
+    for subnet_id in $subnet_ids; do
+        openstack router remove subnet "$sr_router" "$subnet_id"
+        openstack subnet delete "$subnet_id"
+    done
+    echo "$(date) Removing $sr_subnet subnet"
+else
+    echo "$(date) No subnets to remove"
+fi
+
+# Delete routers
+routers=$(openstack router list --tag "$tag_sr" -f value -c Name)
+
+if [ -n "$routers" ]; then
+    for router in $routers; do
+        openstack router delete "$router"
+    done
+    echo "$(date) Removing $sr_router router" 
+else
+    echo "$(date) No routers to remove"
+fi
+
+# Delete networks
+networks=$(openstack network list --tag "$tag_sr" -f value -c Name)
+
+if [ -n "$networks" ]; then
+    for network in $networks; do
+        openstack network delete "$network"
+    done
+    echo "$(date) Removing $natverk_namn network"
+else
+    echo "$(date) No networks to remove"
+fi
+
+# Delete security groups
+security_groups=$(openstack security group list --tag "$tag_sr" -f value -c Name)
+
+if [ -n "$security_groups" ]; then
+    for security_group in $security_groups; do
+        openstack security group delete "$security_group"
+    done
+    echo "$(date) Removing $sr_security_group security group"
+else
+    echo "$(date) No security groups to remove"
+fi
+
+# Remove specific files if they exist
+for file in "$sshconfig" "$knownhosts" "floating_ip1" "floating_ip2" "$hostsfile"; do
+    if [[ -f "$file" ]]; then
+        rm "$file"
+    fi
+done
+
+
+
+
+# #!/bin/bash
+
+# # Checking required arguments
+# : ${1:?" Please specify the openrc, tag, and ssh_key"}
+# : ${2:?" Please specify the openrc, tag, and ssh_key"}
+# : ${3:?" Please specify the openrc, tag, and ssh_key"}
+
+# cd_time=$(date)
+# openrc_sr=${1}     # The openrc file
+# tag_sr=${2}        # The tag for identifying resources
+# ssh_key_sr=${3}    # The ssh_key
+# no_of_servers=$(grep -E '[0-9]' servers.conf) # number of nodes from servers.conf
+
+# # Sourcing openrc file
+# echo "$cd_time Cleaning up $tag_sr using $openrc_sr"
+# source $openrc_sr
+
+# # Variables
+# natverk_namn="${2}_network"
+# sr_subnet="${2}_subnet"
+# sr_keypair="${2}_key"
+# sr_router="${2}_router"
+# sr_security_group="${2}_security_group"
+# sr_haproxy_server="${2}_proxy"
+# sr_bastion_server="${2}_bastion"
+# sr_server="${2}_dev"
+
+# sshconfig="config"
+# knownhosts="known_hosts"
+# hostsfile="hosts"
+# fip2="$(cat floating_ip2)"
+
+# # Retrieving the list of servers with the tag
+# servers=$(openstack server list --name "$tag_sr" -c ID -f value)
+# n=$(echo "$servers" | wc -l)
+# # Deleting each server
+# if [ -n "$servers" ]; then
+#   echo "$(date) $n nodes, to be removed"
+#   for server_id in $servers; do
+#     openstack server delete $server_id
+#   done
+#   echo "$(date) $n nodes have been removed"
+# else
+#   echo "$(date) No nodes to remove"
+# fi
+
+# # Deleting the keypair
+# keypairs=$(openstack keypair list -f value -c Name | grep "$tag_sr*")
+
+# if [ -n "$keypairs" ]; then
+#   for key in $keypairs; do  
+#     openstack keypair delete $key
+#   done
+#   echo "$(date) Removing $sr_keypair key"
+# else
+#   echo "$(date) No keypair to remove."
+# fi
+
+# floating_ip=$(openstack floating ip list --status DOWN -f value -c "Floating IP Address")
+
+# if [ -n "$floating_ip" ]; then
+#   for fip in $floating_ip; do
+#     openstack floating ip delete "$fip"
+#   done
+#   echo "$(date) Removing all the floating IPs"
+# else
+#   echo "$(date) No floating IPs to delete"
+# fi
+
+# subnet_id=$(openstack subnet list --tag "${tag_sr}" -c ID -f value)
+# if [ -n "${subnet_id}" ]; then
+#   for sub in ${subnet_id}; do
+#     openstack router remove subnet "${sr_router}" "$sub"
+#     openstack subnet delete "$sub"
+#   done
+#   echo "$(date) Removing ${sr_subnet} subnet"
+# else
+#   echo "$(date) No subnets to remove"
+# fi
+
+# # Removing the router
+# routers=$(openstack router list --tag ${tag_sr} -f value -c Name)
+# if [ -n "$routers" ]; then
+#   for r in $routers; do
+#     openstack router delete "$r"
+#   done
+#   echo "$(date) Removing ${sr_router} router" 
+# else
+#   echo "$(date) No routers to remove"
+# fi
+
+# # Removing the network
+# networks=$(openstack network list --tag ${tag_sr} -f value -c Name)
+# if [ -n "$networks" ]; then
+#   for net in $networks; do
+#     openstack network delete "$net"
+#   done
+#   echo "$(date) Removing ${natverk_namn} network"
+# else
+#   echo "$(date) No networks to remove"
+# fi
+
+# # Removing security group rules
+# security_group=$(openstack security group list --tag $tag_sr -f value -c Name)
+# if [ -n "$security_group" ]; then
+#   for sec in $security_group; do
+#     openstack security group delete "$sec"
+#   done
+#   echo "$(date) Removing ${sr_security_group} security group"
+# else
+#   echo "$(date) No security groups to remove"
+# fi
+
+# if [[ -f "$sshconfig" ]] ; then
+#     rm "$sshconfig"
+# fi
+
+# if [[ -f "$knownhosts" ]] ; then
+#     rm "$knownhosts"
+# fi
+
+# if [[ -f "floating_ip1" ]] ; then
+#     rm "floating_ip1"
+# fi
+
+# if [[ -f "floating_ip2" ]] ; then
+#     rm "floating_ip2"
+# fi
+
+# if [[ -f "$hostsfile" ]] ; then
+#     rm "$hostsfile"
+# fi

@@ -2,22 +2,12 @@
 
 SECONDS=0 # Keeping track of the time taken to deploy the solution
 
-# checking arguments
-if [ -z "$1" ]; then
-    echo "Error: Please specify the openrc, tag, and ssh_key"
+# Check if the necessary arguments are provided
+if [ $# -lt 3 ]; then
+    echo "Error: Please specify the openrc, tag, and ssh_key as ar6guments to install"
+    echo "For exmple: ./install openrc tag sshkey"
     exit 1
 fi
-
-if [ -z "$2" ]; then
-    echo "Error: Please specify the openrc, tag, and ssh_key"
-    exit 1
-fi
-
-if [ -z "$3" ]; then
-    echo "Error: Please specify the openrc, tag, and ssh_key"
-    exit 1
-fi
-
 openrc_sr=${1}     # openrc access file
 tag_sr=${2}        # tag for identification of items
 ssh_key_path=${3}  # the ssh_key
