@@ -11,13 +11,8 @@ tag_sr=${2}        # tag for identification of items
 ssh_key_path=${3}  # the ssh_key
 no_of_servers=$(grep -E '[0-9]' servers.conf) # number of nodes from servers.conf
 
-
-# Get the number of nodes from servers.conf
-no_of_servers=$(grep -E '[0-9]' servers.conf)
-
 # Record the current time
-cd_time=$(date)
-echo "$cd_time Cleaning up $tag_sr using $openrc_sr"
+echo "$(date) Cleaning up $tag_sr using $openrc_sr"
 
 # Source the openrc file
 source "$openrc_sr"
