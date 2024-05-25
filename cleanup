@@ -6,26 +6,26 @@ if [ $# -lt 3 ]; then
     echo "For exmple: ./install openrc tag sshkey"
     exit 1
 fi
-openrc_sr=${1}     # openrc access file
-tag_sr=${2}        # tag for identification of items
-ssh_key_path=${3}  # the ssh_key
+openrc=${1}     # openrc access file
+tag=${2}        # tag for identification of items
+ssh_key=${3}  # the ssh_key
 no_of_servers=$(grep -E '[0-9]' servers.conf) # number of nodes from servers.conf
 
 # Record the current time
-echo "$(date) Cleaning up $tag_sr using $openrc_sr"
+echo "$(date) Cleaning up $tag using $openrc"
 
 # Source the openrc file
-source "$openrc_sr"
+source "$openrc"
 
 # Define variables
-natverk_namn="${tag_sr}_network"
-sr_subnet="${tag_sr}_subnet"
-sr_keypair="${tag_sr}_key"
-sr_router="${tag_sr}_router"
-sr_security_group="${tag_sr}_security_group"
-sr_haproxy_server="${tag_sr}_proxy"
-sr_bastion_server="${tag_sr}_bastion"
-sr_server="${tag_sr}_dev"
+project_network="${tag}_network"
+project_subnet="${tag}_subnet"
+project_keypair="${tag}_key"
+project_router="${tag}_router"
+project_security_group="${tag}_security_group"
+project_haproxy_server="${tag}_proxy"
+project_bastion_server="${tag}_bastion"
+project_server="${tag}_server"
 
 sshconfig="config"
 knownhosts="known_hosts"
@@ -33,7 +33,7 @@ hostsfile="hosts"
 fip2=$(cat floating_ip2)
 
 # Retrieve and delete servers
-servers=$(openstack server list --name "$tag_sr" -c ID -f value)
+servers=$(openstack server list --name "$tag" -c ID -f value)
 server_count=$(echo "$servers" | wc -l)
 
 if [ -n "$servers" ]; then
@@ -47,13 +47,13 @@ else
 fi
 
 # Delete the keypair
-keypairs=$(openstack keypair list -f value -c Name | grep "$tag_sr*")
+keypairs=$(openstack keypair list -f value -c Name | grep "$tag*")
 
 if [ -n "$keypairs" ]; then
     for key in $keypairs; do  
         openstack keypair delete "$key"
     done
-    echo "$(date) Removing $sr_keypair key"
+    echo "$(date) Removing $project_keypair key"
 else
     echo "$(date) No keypair to remove."
 fi
@@ -71,50 +71,50 @@ else
 fi
 
 # Delete subnets
-subnet_ids=$(openstack subnet list --tag "$tag_sr" -c ID -f value)
+subnet_ids=$(openstack subnet list --tag "$tag" -c ID -f value)
 
 if [ -n "$subnet_ids" ]; then
     for subnet_id in $subnet_ids; do
-        openstack router remove subnet "$sr_router" "$subnet_id"
+        openstack router remove subnet "$project_router" "$subnet_id"
         openstack subnet delete "$subnet_id"
     done
-    echo "$(date) Removing $sr_subnet subnet"
+    echo "$(date) Removing $project_subnet subnet"
 else
     echo "$(date) No subnets to remove"
 fi
 
 # Delete routers
-routers=$(openstack router list --tag "$tag_sr" -f value -c Name)
+routers=$(openstack router list --tag "$tag" -f value -c Name)
 
 if [ -n "$routers" ]; then
     for router in $routers; do
         openstack router delete "$router"
     done
-    echo "$(date) Removing $sr_router router" 
+    echo "$(date) Removing $project_router router" 
 else
     echo "$(date) No routers to remove"
 fi
 
 # Delete networks
-networks=$(openstack network list --tag "$tag_sr" -f value -c Name)
+networks=$(openstack network list --tag "$tag" -f value -c Name)
 
 if [ -n "$networks" ]; then
     for network in $networks; do
         openstack network delete "$network"
     done
-    echo "$(date) Removing $natverk_namn network"
+    echo "$(date) Removing $project_network network"
 else
     echo "$(date) No networks to remove"
 fi
 
 # Delete security groups
-security_groups=$(openstack security group list --tag "$tag_sr" -f value -c Name)
+security_groups=$(openstack security group list --tag "$tag" -f value -c Name)
 
 if [ -n "$security_groups" ]; then
     for security_group in $security_groups; do
         openstack security group delete "$security_group"
     done
-    echo "$(date) Removing $sr_security_group security group"
+    echo "$(date) Removing $project_security_group security group"
 else
     echo "$(date) No security groups to remove"
 fi

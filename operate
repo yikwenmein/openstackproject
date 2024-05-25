@@ -9,63 +9,63 @@ if [ $# -lt 3 ]; then
     echo "For exmple: ./install openrc tag sshkey"
     exit 1
 fi
-openrc_sr=${1}     # openrc access file
-tag_sr=${2}        # tag for identification of items
-ssh_key_sr=${3}  # the ssh_key
+openrc=${1}     # openrc access file
+tag=${2}        # tag for identification of items
+ssh_key=${3}  # the ssh_key
 no_of_servers=$(grep -E '[0-9]' servers.conf) # number of nodes from servers.conf
 
 
 # Define variables
-natverk_namn="${2}_network"
-sr_subnet="${2}_subnet"
-sr_keypair="${2}_key"
-sr_router="${2}_router"
-sr_security_group="${2}_security_group"
-sr_haproxy_server="${2}_proxy"
-sr_bastion_server="${2}_bastion"
-sr_server="${2}_server"
+project_network="${2}_network"
+project_subnet="${2}_subnet"
+project_keypair="${2}_key"
+project_router="${2}_router"
+project_security_group="${2}_security_group"
+project_haproxy_server="${2}_proxy"
+project_bastion_server="${2}_bastion"
+project_server="${2}_server"
 sshconfig="config"
 knownhosts="known_hosts"
 hostsfile="hosts"
 nodes_yaml="nodes.yaml"
 
 run_status=0 ##ansible run status
-echo "$(date) Running operate mode for tag: $tag_sr using $openrc_sr for credentials"
-source $openrc_sr
+echo "$(date) Running operate mode for tag: $tag using $openrc for credentials"
+source $openrc
 
 generate_config(){
-    bastionfip=$(openstack server list --name $sr_bastion_server -c Networks -f value | grep -Po '\d+\.\d+\.\d+\.\d+' | awk 'NR==2')
-    haproxyfip=$(openstack server list --name $sr_haproxy_server -c Networks -f value | grep -Po '\d+\.\d+\.\d+\.\d+' | awk 'NR==2')
+    bastionfip=$(openstack server list --name $project_bastion_server -c Networks -f value | grep -Po '\d+\.\d+\.\d+\.\d+' | awk 'NR==2')
+    haproxyfip=$(openstack server list --name $project_haproxy_server -c Networks -f value | grep -Po '\d+\.\d+\.\d+\.\d+' | awk 'NR==2')
        
     echo "$(date) Generating config file"
-    echo "Host $sr_bastion_server" >> $sshconfig
+    echo "Host $project_bastion_server" >> $sshconfig
     echo "   User ubuntu" >> $sshconfig
     echo "   HostName $bastionfip" >> $sshconfig
-    echo "   IdentityFile $ssh_key_sr" >> $sshconfig
+    echo "   IdentityFile $ssh_key" >> $sshconfig
     echo "   UserKnownHostsFile /dev/null" >> $sshconfig
     echo "   StrictHostKeyChecking no" >> $sshconfig
     echo "   PasswordAuthentication no" >> $sshconfig
     echo " " >> $sshconfig
-    echo "Host $sr_haproxy_server" >> $sshconfig
+    echo "Host $project_haproxy_server" >> $sshconfig
     echo "   User ubuntu" >> $sshconfig
     echo "   HostName $haproxyfip" >> $sshconfig
-    echo "   IdentityFile $ssh_key_sr" >> $sshconfig
+    echo "   IdentityFile $ssh_key" >> $sshconfig
     echo "   StrictHostKeyChecking no" >> $sshconfig
     echo "   PasswordAuthentication no ">> $sshconfig
-    echo "   ProxyJump $sr_bastion_server" >> $sshconfig
+    echo "   ProxyJump $project_bastion_server" >> $sshconfig
 
     # generate hosts file
     echo "[bastion]" >> $hostsfile
-    echo "$sr_bastion_server" >> $hostsfile
+    echo "$project_bastion_server" >> $hostsfile
     echo " " >> $hostsfile
     echo "[proxyserver]" >> $hostsfile
-    echo "$sr_haproxy_server" >> $hostsfile   
+    echo "$project_haproxy_server" >> $hostsfile   
     echo " " >> $hostsfile
     echo "[webservers]" >> $hostsfile
     
     # The list of running servers
     
-    active_servers=$(openstack server list --status ACTIVE -f value -c Name | grep -oP "${tag_sr}"'_server([0-9]+)')
+    active_servers=$(openstack server list --status ACTIVE -f value -c Name | grep -oP "${tag}"'_server([0-9]+)')
     
     # Getting IP addresses servers
     for server in $active_servers; do
@@ -74,11 +74,11 @@ generate_config(){
             echo "Host $server" >> $sshconfig
             echo "   User ubuntu" >> $sshconfig
             echo "   HostName $ip_address" >> $sshconfig
-            echo "   IdentityFile $ssh_key_sr" >> $sshconfig
+            echo "   IdentityFile $ssh_key" >> $sshconfig
             echo "   UserKnownHostsFile=~/dev/null" >> $sshconfig
             echo "   StrictHostKeyChecking no" >> $sshconfig
             echo "   PasswordAuthentication no" >> $sshconfig
-            echo "   ProxyJump $sr_bastion_server" >> $sshconfig 
+            echo "   ProxyJump $project_bastion_server" >> $sshconfig 
             echo "$server" >> $hostsfile
             echo "$ip_address" >> $nodes_yaml
     done
@@ -86,7 +86,7 @@ generate_config(){
     echo " " >> $hostsfile
     echo "[all:vars]" >> $hostsfile
     echo "ansible_user=ubuntu" >> $hostsfile
-    echo "ansible_ssh_private_key_file=$ssh_key_sr" >> $hostsfile
+    echo "ansible_ssh_private_key_file=$ssh_key" >> $hostsfile
     echo "ansible_ssh_common_args=' -F $sshconfig '" >> $hostsfile
 }
 
@@ -109,19 +109,19 @@ do
 
     existing_servers=$(openstack server list --status ACTIVE --column Name -f value)
     #echo "$(date) $existing_servers existing servers."
-    devservers_count=$(grep -c $sr_server <<< $existing_servers)
+    devservers_count=$(grep -c $project_server <<< $existing_servers)
     echo "$(date) $devservers_count nodes available."
     
     total_servers=$(openstack server list --column Name -f value)
-    total_count=$(grep -c $sr_server <<< $total_servers)
+    total_count=$(grep -c $project_server <<< $total_servers)
 
 
 
     active_servers=$(openstack server list --status ACTIVE -f value -c Name)
-    count_active_servers=$(grep -oP "${sr_server}" <<< "${active_servers}" | wc -l)
+    count_active_servers=$(grep -oP "${project_server}" <<< "${active_servers}" | wc -l)
     # Determine if more servers are needed
 
-    count_active_servers=$(grep -oP "${sr_server}" <<< "${active_servers}" | wc -l)
+    count_active_servers=$(grep -oP "${project_server}" <<< "${active_servers}" | wc -l)
 
 
 # Determine if more servers are needed
@@ -166,13 +166,13 @@ do
         # If still more servers are needed, create new ones
         while (( servers_to_add > 0 )); do
             random_suffix=$((RANDOM % no_of_servers + 1))
-            new_server_name="${sr_server}${random_suffix}"
+            new_server_name="${project_server}${random_suffix}"
             
             used=0
             until [[ used -eq 1 ]]; do
                 if echo "${current_server_names}" | grep -qFx "${new_server_name}"; then
                     random_suffix=$((RANDOM % no_of_servers + 1))
-                    new_server_name="${sr_server}${random_suffix}"
+                    new_server_name="${project_server}${random_suffix}"
                 else
                     used=1
                 fi
@@ -183,10 +183,10 @@ do
             
             # Create the new server
             created_node=$(openstack server create --image "Ubuntu 20.04 Focal Fossa x86_64" \
-                --key-name "${sr_keypair}" \
+                --key-name "${project_keypair}" \
                 --flavor "1C-1GB-20GB" \
-                --network "${natverk_namn}" \
-                --security-group "${sr_security_group}" \
+                --network "${project_network}" \
+                --security-group "${project_security_group}" \
                 "${new_server_name}")
 
             echo "$(date) Node ${new_server_name} created."
@@ -215,7 +215,7 @@ do
         removed_count=0
 
         while (( removed_count < servers_to_remove )); do
-            server_to_remove=$(openstack server list --status ACTIVE -f value -c Name | grep -m1 -oP "${tag_sr}_server[0-9]+")
+            server_to_remove=$(openstack server list --status ACTIVE -f value -c Name | grep -m1 -oP "${tag}_server[0-9]+")
             openstack server delete "${server_to_remove}" --wait
             echo "$(date) Deleted server ${server_to_remove}."
             ((removed_count++))
@@ -227,7 +227,7 @@ do
     fi
 
     current_servers=$(openstack server list --status ACTIVE --column Name -f value)
-    new_count=$(grep -c $sr_server <<< $current_servers)
+    new_count=$(grep -c $project_server <<< $current_servers)
  
     if [[ "$no_of_servers" == "$new_count" &&  "$run_status" -eq 0 ]]
     then
@@ -239,7 +239,7 @@ do
             ansible-playbook -i "$hostsfile" site.yaml
             sleep 5
             run_status=0
-            echo "$(date) Checking node availability through the ${sr_bastion_server}."
+            echo "$(date) Checking node availability through the ${project_bastion_server}."
             curl http://$bastionfip:5000
             echo "$(date) Done, the solution has been deployed."
             echo "$(date) Sleeping 30 seconds. Press CTRL-C if you wish to exit."
