@@ -1,4 +1,4 @@
-# #!/bin/bash
+#!/bin/bash
 
 SECONDS=0 # Keeping track of the time taken to deploy the solution
 
