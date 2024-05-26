@@ -350,7 +350,8 @@ done
     echo "ansible_ssh_common_args=' -F $sshconfig '"
 } >> "$hostsfile"
 
-
+echo "$(date) copying ssh config to system's default ssh path"
+cp -f "$sshconfig" "$HOME/.ssh"
 # Run ansible-playbook
 echo "$(date) Starting ansible-playbook execution"
 ansible-playbook -i "$hostsfile" site.yaml

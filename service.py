@@ -1,16 +1,41 @@
-import flask
-import time
+import flask 
 import socket
+import time
+import random
 
 h_name = socket.gethostname()
 IP_addres = socket.gethostbyname(h_name)
-
 app = flask.Flask(__name__)
 
 @app.route('/')
 def index():
+    host = IP_addres
+    client_ip = flask.request.remote_addr
+    client_port = str(flask.request.environ.get('REMOTE_PORT'))
+    hostname = h_name
     Time= time.strftime("%H:%M:%S")
-    return "Time---> "+Time+ "\n"+ "hostname---> "+h_name+" ("+IP_addres+")\n"
+    rand=str(random.randint(0,100))
+    return Time+" "+client_ip + ":" +client_port +" -- " + host+" ("+hostname+") " +rand+"\n"
 
 if __name__ == '__main__':
-    app.run(host = '0.0.0.0', port = 80, debug = True)
+  app.run(host = '0.0.0.0', port = 5000, debug = True)
+  #app.run( port = 8080, debug = True)
+
+
+
+# import flask
+# import time
+# import socket
+
+# h_name = socket.gethostname()
+# IP_addres = socket.gethostbyname(h_name)
+
+# app = flask.Flask(__name__)
+
+# @app.route('/')
+# def index():
+#     Time= time.strftime("%H:%M:%S")
+#     return "Time---> "+Time+ "\n"+ "hostname---> "+h_name+" ("+IP_addres+")\n"
+
+# if __name__ == '__main__':
+#     app.run(host = '0.0.0.0', port = 80, debug = True)

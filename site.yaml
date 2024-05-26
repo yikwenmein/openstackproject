@@ -2,180 +2,111 @@
 - hosts: webservers
   gather_facts: yes
   become: yes
-  # vars:
-  #   app_path: app.py
-  #   app_command: "{{ app_path }}.py"
-
   tasks:
-    # - debug:
-    #     var: ansible_default_ipv4.address
-    - name: Upadate cache
+    - name: Updating the repositories cache
       apt:
         update_cache: yes
         cache_valid_time: 3600
-
-    - name: Install Python and pip
+      
+    - name: Installing Python3-pip
       apt:
-        name:
-          - python3
-          - python3-pip
-        state: latest
-
-    - name: Install Flask
-      pip:
+         name: python3-pip
+         state: present
+         
+    - name: Installing flask using 'pip3' executable
+      ansible.builtin.pip:
         name: flask
+        executable: pip3
         state: latest
 
-    - name: Stop SNMPd service
-      service:
-        name: snmpd
-        state: stopped
-      ignore_errors: yes  # SNMPd might not be installed initially
-
-    - name: Remove SNMPd packages
-      apt:
-        name: 
-          - snmpd
-        state: absent
-        autoremove: yes
-        purge: true
-
-    - name: Install SNMPd package
-      package: name=snmpd state=latest
-
-    # - name: Stop SNMP service
-    #   service:
-    #     name: snmp
-    #     state: stopped
-    #   ignore_errors: yes  # SNMPd might not be installed initially
-
-    - name: Remove SNMP packages
-      apt:
-        name: 
-          - snmp
-        state: absent
-        autoremove: yes
-        purge: true
-
-    - name: Install SNMP package
-      package: name=snmp state=latest
-
-    - name: Copy snmpd conf file
+    - name: Uploading the application to the servers
       copy:
-        src: ./snmpd.conf
-        dest: /etc/snmp/snmpd.conf
-        owner: ubuntu
-        group: ubuntu
-        mode: '0644'
-
-    - name: Restart snmpd
-      service: name=snmpd state=restarted
-    - name: copy app.py
-      copy:
-        src: ./app.py 
+        src: ./service.py
         dest: /home/ubuntu
         owner: ubuntu
         group: ubuntu
         mode: 0644
-    - name: Running flask app
-      shell: python3 /home/ubuntu/app.py 
-      async: 3600
+
+    - name: Running the application
+      shell: python3 /home/ubuntu/service.py
+      async: 86400
       poll: 0
+      
+    - name: Install the snmpdaemon
+      apt:
+              name: snmpd
+              state: latest
+    
+    - name: Copy the snmpd config file
+      ansible.builtin.copy:
+              src: ./snmpd.conf
+              dest: /etc/snmp/snmpd.conf
+              
+    - name: Restarting the snmpdaemon
+      service:
+              name: snmpd
+              state: restarted    
 
-
-- hosts: haproxy
+- hosts: proxyserver
   gather_facts: yes
   become: yes
-
   tasks:
-    - name: Upadate cache
+    - name: Updating repositories cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+        
+    - name: Installing NGINX
+      apt:
+        name: nginx
+        state: present
+        
+    - name: Uploading the NGINX config file
+      template:
+        src: ./nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+
+    - name: Restarting NGINX
+      service:
+        name: nginx
+        state: restarted
+
+- hosts: bastion
+  any_errors_fatal: true
+  gather_facts: yes
+  become: yes
+  tasks:
+    - name: Updating repositories cache
       apt:
         update_cache: yes
         cache_valid_time: 3600
 
-    - name: Stop HAproxy service
-      service:
-        name: haproxy
-        state: stopped
-      ignore_errors: yes  # HAproxy might not be installed initially
-
-    - name: Remove HAproxy packages
+    - name: Installing Python3-pip
       apt:
-        name: 
-          - haproxy
-        state: absent
-        autoremove: yes
-        purge: true
+         name: python3-pip
+         state: present
+         
+    - name: Installing required modules
+      ansible.builtin.pip:
+        name: [ 'flask', 'ping3' ]
+        executable: pip3
+        state: latest
 
-    - name: Install HAproxy
-      apt:
-        name: haproxy
-        state: present    
-    - name: Copy HAproxy configuration file
-      ansible.builtin.template:
-        src: ./haproxy.cfg.j2
-        dest: /etc/haproxy/haproxy.cfg
-    - name: Restart HAProxy
-      service: name=haproxy state=restarted
-
-    - name: Stop NGINX service
-      service:
-        name: nginx
-        state: stopped
-      ignore_errors: yes  # NGINX might not be installed initially
-
-    - name: Remove NGINX packages
-      apt:
-        name: 
-          - nginx
-          # - nginx-full
-          # - nginx-common
-        state: absent
-        autoremove: yes
-        purge: true
-    
-    - name: Install Nginx package
-      package: name=nginx state=latest
-      # package:
-      #   name: nginx
-      #   state: latest
-    - name: Copy Nginx configuration file
-      ansible.builtin.template:
-        src: ./nginx.conf.j2
-        dest: /etc/nginx/nginx.conf
-        owner: ubuntu
-        group: ubuntu
-        mode: '0644'
-    - name: Copy Nginx default file to sites-enabled
+    - name: Uploading the node availability checker application
       copy:
-        src: ./default
-        dest: /etc/nginx/sites-enabled/default
+        src: ./alive.py
+        dest: /home/ubuntu
         owner: ubuntu
         group: ubuntu
-        mode: '0644'
-    - name: Copy Nginx default file to sites-available
-      copy:
-        src: ./default
-        dest: /etc/nginx/sites-available/default
-        owner: ubuntu
-        group: ubuntu
-        mode: '0644'
-    - name: Restart Nginx service
-      service: name=nginx state=restarted
+        mode: 0644
 
-    - name: Copy password file
-      copy:
-        src: ./uipassword
-        dest: /etc/haproxy/
-        owner: ubuntu
-        group: ubuntu
-        mode: 0777
-    - name: Remove SNMP packages
-      apt:
-        name: 
-          - snmp
-        state: absent
-        autoremove: yes
-        purge: true           
-    - name: Install SNMP package
-      package: name=snmp state=latest
+    - name: Copying nodes.yaml
+      ansible.builtin.copy:
+              src: ./nodes.yaml
+              dest: /home/ubuntu
+
+    - name: Running the node availability checker application
+      shell: python3 /home/ubuntu/alive.py
+      async: 3600
+      poll: 0
+

@@ -35,6 +35,7 @@ def index():
             WORDS.append(pingStr)
 
     returnStr='\n'.join(WORDS)
+    #print(returnStr + "\n")
     return returnStr + "\n"
 
 if __name__ == '__main__':
