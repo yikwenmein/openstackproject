@@ -4,13 +4,13 @@ SECONDS=0 # Keeping track of the time taken to deploy the solution
 
 # Check if the necessary arguments are provided
 if [ $# -lt 3 ]; then
-    echo "Error: Please specify the openrc, tag, and ssh_key as ar6guments to install"
+    echo "Error: Please specify the openrc, tag, and ssh_public_key as ar6guments to install"
     echo "For exmple: ./install openrc tag sshkey"
     exit 1
 fi
 openrc=${1}     # openrc access file
 tag=${2}        # tag for identification of items
-ssh_key=${3}  # the ssh_key
+ssh_public_key=${3}  # the ssh_public_key
 no_of_servers=$(grep -E '[0-9]' servers.conf) # number of nodes from servers.conf
 
 # Sourcing the given openrc file
@@ -18,7 +18,7 @@ echo "$(date) Begining the deployment of $tag using ${openrc} for credentials."
 source ${openrc}
 
 # Defining variables
-natverk_namn="${2}_network"
+project_network="${2}_network"
 project_subnet="${2}_subnet"
 project_keypair="${2}_key"
 project_router="${2}_router"
@@ -42,20 +42,20 @@ if [[ "$available_keypairs" =~ (^|[[:space:]])"${project_keypair}"($|[[:space:]]
     echo "$(date) Keypair ${project_keypair} already exists."
 else
     echo "$(date) Keypair ${project_keypair} not found in this OpenStack project."
-    echo "$(date) Creating keypair ${project_keypair} with the public key from ${ssh_key}."
-    created_keypair=$(openstack keypair create --public-key "${ssh_key}" "${project_keypair}")
+    echo "$(date) Creating keypair ${project_keypair} with the public key from ${ssh_public_key}."
+    created_keypair=$(openstack keypair create --public-key "${ssh_public_key}" "${project_keypair}")
 fi
 
 # Retrieve the list of current networks with the specified tag
 existing_networks=$(openstack network list --tag "${tag}" --column Name -f value)
 
 # Check if the desired network exists in the list
-if [[ $(echo "${existing_networks}" | grep -x "${natverk_namn}") ]]; then
-    echo "$(date) ${natverk_namn} already exists"
+if [[ $(echo "${existing_networks}" | grep -x "${project_network}") ]]; then
+    echo "$(date) ${project_network} already exists"
 else
-    echo "$(date) ${natverk_namn} not found in the current OpenStack project, creating it."
-    created_network=$(openstack network create --tag "${tag}" "${natverk_namn}" -f json)
-    echo "$(date) ${natverk_namn} has been created."
+    echo "$(date) ${project_network} not found in the current OpenStack project, creating it."
+    created_network=$(openstack network create --tag "${tag}" "${project_network}" -f json)
+    echo "$(date) ${project_network} has been created."
 fi
 
 
@@ -73,7 +73,7 @@ else
         --subnet-range 10.10.0.0/27 \
         --allocation-pool start=10.10.0.10,end=10.10.0.30 \
         --tag "${tag}" \
-        --network "${natverk_namn}" \
+        --network "${project_network}" \
         "${project_subnet}" -f json)
 
     echo "$(date) Added ${project_subnet}."
@@ -142,75 +142,91 @@ idle_ips=$(openstack floating ip list --status DOWN -c "Floating IP Address" -f 
 # Node creation
 
 #existing_servers=$(openstack server list --status ACTIVE --column Name -f value)
-
 # Retrieve the list of active servers
 active_servers=$(openstack server list --status ACTIVE -f value -c Name)
 
+# Check if the project bastion server already exists
 if [[ "${active_servers}" == *"${project_bastion_server}"* ]]; then
     echo "$(date) ${project_bastion_server} already exists"
-else
-    # Check for available floating IPs
-    if [[ -n "${idle_ips}" ]]; then
-        fip1=$(echo "${idle_ips}" | awk '{print $1}')
-        if [[ -n "${fip1}" ]]; then
-            echo "$(date) 1 floating IP available for the Bastion."
-        else
-            echo "$(date) Creating floating IP for the Bastion"
-            created_fip1=$(openstack floating ip create ext-net -f json | jq -r '.floating_ip_address' > floating_ip1)
-            fip1="$(cat floating_ip1)"
-        fi
+
+    # Check if the server has a floating IP attached
+    floating_ip_attached=$(openstack server list --name "${project_bastion_server}" -c Networks -f value | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | sed -n '2p')
+    if [[ -z "${floating_ip_attached}" ]]; then
+        echo "$(date) ${project_bastion_server} exists but does not have a floating IP attached. Creating and attaching a new floating IP."
+        new_fip=$(openstack floating ip create ext-net -f value -c floating_ip_address)
+        openstack server add floating ip ${project_bastion_server} ${new_fip}
+        echo "$(date) New floating IP ${new_fip} assigned to ${project_bastion_server}."
     else
-        echo "$(date) Creating floating IP for the Bastion"
-        created_fip1=$(openstack floating ip create ext-net -f json | jq -r '.floating_ip_address' > floating_ip1)
-        fip1="$(cat floating_ip1)"
+        echo "$(date) ${project_bastion_server} already has a floating IP attached: ${floating_ip_attached}"
+    fi
+else
+    echo "$(date) Did not find ${project_bastion_server}, launching it."
+
+    # Check for available idle floating IPs
+    idle_ips=$(openstack floating ip list --status DOWN -f value -c "Floating IP Address")
+
+    if [[ -n "${idle_ips}" ]]; then
+        fip1=$(echo "${idle_ips}" | head -n 1)
+        echo "$(date) Found idle floating IP ${fip1} for the Bastion."
+    else
+        echo "$(date) No idle floating IP available. Creating a new floating IP."
+        fip1=$(openstack floating ip create ext-net -f value -c floating_ip_address)
+        echo "$(date) Created new floating IP ${fip1}."
     fi
 
     # Launch the bastion server
-    echo "$(date) Did not find ${project_bastion_server}, launching it."
     bastion=$(openstack server create --image "Ubuntu 20.04 Focal Fossa x86_64" ${project_bastion_server} \
      --key-name ${project_keypair} \
      --flavor "1C-1GB-20GB" \
-     --network ${natverk_namn} \
-     --security-group ${project_security_group}) 
-
-    add_bastion_fip=$(openstack server add floating ip ${project_bastion_server} ${fip1}) 
-    echo "$(date) Floating IP assigned for bastion."
+     --network ${project_network} \
+     --security-group ${project_security_group} \
+     --wait)
+    openstack server add floating ip ${project_bastion_server} ${fip1}
     echo "$(date) Added ${project_bastion_server} server."
 fi
 
+# Retrieve the list of active servers
 
-# Check if the haproxy server is in the list of active servers
-if [[ "${active_servers}" =~ "${project_haproxy_server}" ]]; then
+idle_ips2=$(openstack floating ip list --status DOWN -c "Floating IP Address" -f value | awk '{print $1}')
+active_servers2=$(openstack server list --status ACTIVE -f value -c Name)
+
+# Check if the project bastion server already exists
+if [[ "${active_servers2}" == *"${project_haproxy_server}"* ]]; then
     echo "$(date) ${project_haproxy_server} already exists"
-else
-    # Determine if there are any idle IPs
-    if [[ -z "${idle_ips}" ]]; then
-        echo "$(date) Creating a floating IP for Proxy server"
-        new_fip2=$(openstack floating ip create ext-net -f json | jq -r '.floating_ip_address' > floating_ip2)
-        fip2="$(cat floating_ip2)"
+
+    # Check if the server has a floating IP attached
+    floating_ip_attached2=$(openstack server list --name "${project_haproxy_server}" -c Networks -f value | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | sed -n '2p')
+    if [[ -z "${floating_ip_attached2}" ]]; then
+        echo "$(date) ${project_haproxy_server} exists but does not have a floating IP attached. Creating and attaching a new floating IP."
+        new_fip1=$(openstack floating ip create ext-net -f value -c floating_ip_address)
+        openstack server add floating ip ${project_haproxy_server} ${new_fip1}
+        echo "$(date) New floating IP ${new_fip1} assigned to ${project_haproxy_server}."
     else
-        new_fip2=$(echo "${idle_ips}" | awk '{print $2}')
-        if [[ -z "${fip2}" ]]; then
-            echo "$(date) Creating floating IP for the Proxy server"
-            fip2=$(openstack floating ip create ext-net -f json | jq -r '.floating_ip_address' > floating_ip2)
-            fip2="$(cat floating_ip2)"
-        else
-            echo "$(date) 1 floating IP available for the Proxy server."
-        fi
+        echo "$(date) ${project_haproxy_server} already has a floating IP attached: ${floating_ip_attached2}"
+    fi
+else
+    echo "$(date) Did not find ${project_haproxy_server}, launching it."
+
+    # Check for available idle floating IPs
+    idle_ips2=$(openstack floating ip list --status DOWN -f value -c "Floating IP Address")
+
+    if [[ -n "${idle_ips2}" ]]; then
+        fip2=$(echo "${idle_ips2}" | head -n 1)
+        echo "$(date) Found idle floating IP ${fip2} for the Bastion."
+    else
+        echo "$(date) No idle floating IP available. Creating a new floating IP."
+        fip2=$(openstack floating ip create ext-net -f value -c floating_ip_address)
+        echo "$(date) Created new floating IP ${fip2}."
     fi
 
-    echo "$(date) Did not find ${project_haproxy_server}, launching it."
-    
-    haproxy=$(openstack server create --image "Ubuntu 20.04 Focal Fossa x86_64" \
-                                     --key-name "${project_keypair}" \
-                                     --flavor "1C-1GB-20GB" \
-                                     --network "${natverk_namn}" \
-                                     --security-group "${project_security_group}" \
-                                     "${project_haproxy_server}")
-    
-    openstack server add floating ip "${project_haproxy_server}" "${fip2}"
-    
-    echo "$(date) Floating IP assigned for Proxy server."
+    # Launch the bastion server
+    bastion=$(openstack server create --image "Ubuntu 20.04 Focal Fossa x86_64" ${project_haproxy_server} \
+     --key-name ${project_keypair} \
+     --flavor "1C-1GB-20GB" \
+     --network ${project_network} \
+     --security-group ${project_security_group} \
+     --wait)
+    openstack server add floating ip ${project_haproxy_server} ${fip2}
     echo "$(date) Added ${project_haproxy_server} server."
 fi
 
@@ -242,12 +258,12 @@ if (( no_of_servers > count_active_servers )); then
         echo "$(date) Creating ${servers_to_add} additional nodes."
 
         # Create the new server
-        created_node=$(openstack server create --image "Ubuntu 20.04 Focal Fossa x86_64" \
+        created_node=$(openstack server create --image "Ubuntu 20.04 Focal Fossa x86_64" "${new_server_name}" \
                                 --key-name "${project_keypair}" \
                                 --flavor "1C-1GB-20GB" \
-                                --network "${natverk_namn}" \
+                                --network "${project_network}" \
                                 --security-group "${project_security_group}" \
-                                "${new_server_name}")
+                                --wait)
         echo "$(date) Node ${new_server_name} created."
         ((servers_to_add--))
 
@@ -287,14 +303,14 @@ fi
 bastionfip=$(openstack server list --name "${project_bastion_server}" -c Networks -f value | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | sed -n '2p')
 haproxyfip=$(openstack server list --name "${project_haproxy_server}" -c Networks -f value | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | sed -n '2p')
 
-ssh_key_sr=${ssh_key}
-
+#ssh_private_key=${ssh_public_key}
+ssh_private_key=${ssh_public_key::-4} # Removing .pub from the ssh key path
 echo "$(date) Generating config file"
 {
     echo "Host $project_bastion_server"
     echo "   User ubuntu"
     echo "   HostName $bastionfip"
-    echo "   IdentityFile $ssh_key_sr"
+    echo "   IdentityFile $ssh_private_key"
     echo "   UserKnownHostsFile /dev/null"
     echo "   StrictHostKeyChecking no"
     echo "   PasswordAuthentication no"
@@ -302,7 +318,7 @@ echo "$(date) Generating config file"
     echo "Host $project_haproxy_server"
     echo "   User ubuntu"
     echo "   HostName $haproxyfip"
-    echo "   IdentityFile $ssh_key_sr"
+    echo "   IdentityFile $ssh_private_key"
     echo "   StrictHostKeyChecking no"
     echo "   PasswordAuthentication no"
     echo "   ProxyJump $project_bastion_server"
@@ -331,7 +347,7 @@ for server in ${active_servers}; do
         echo "Host ${server}"
         echo "    User ubuntu"
         echo "    HostName ${ip_address}"
-        echo "    IdentityFile ${ssh_key_sr}"
+        echo "    IdentityFile ${ssh_private_key}"
         echo "    UserKnownHostsFile=/dev/null"
         echo "    StrictHostKeyChecking no"
         echo "    PasswordAuthentication no"
@@ -346,7 +362,7 @@ done
     echo " "
     echo "[all:vars]"
     echo "ansible_user=ubuntu"
-    echo "ansible_ssh_private_key_file=$ssh_key_sr"
+    echo "ansible_ssh_private_key_file=$ssh_private_key"
     echo "ansible_ssh_common_args=' -F $sshconfig '"
 } >> "$hostsfile"
 
