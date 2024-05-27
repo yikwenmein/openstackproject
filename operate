@@ -5,16 +5,16 @@ SECONDS=0 # Keeping track of the time taken to deploy the solution
 # checking arguments
 # Check if the necessary arguments are provided
 if [ $# -lt 3 ]; then
-    echo "Error: Please specify the openrc, tag, and ssh_key as ar6guments to install"
+    echo "Error: Please specify the openrc, tag, and ssh_private_key as ar6guments to install"
     echo "For exmple: ./install openrc tag sshkey"
     exit 1
 fi
 openrc=${1}     # openrc access file
 tag=${2}        # tag for identification of items
-ssh_key=${3}  # the ssh_key
+ssh_public_key=${3}  # the ssh_private_key
 no_of_servers=$(grep -E '[0-9]' servers.conf) # number of nodes from servers.conf
 
-
+ssh_private_key=${ssh_public_key::-4}
 # Define variables
 project_network="${2}_network"
 project_subnet="${2}_subnet"
@@ -41,7 +41,7 @@ generate_config(){
     echo "Host $project_bastion_server" >> $sshconfig
     echo "   User ubuntu" >> $sshconfig
     echo "   HostName $bastionfip" >> $sshconfig
-    echo "   IdentityFile $ssh_key" >> $sshconfig
+    echo "   IdentityFile $ssh_private_key" >> $sshconfig
     echo "   UserKnownHostsFile /dev/null" >> $sshconfig
     echo "   StrictHostKeyChecking no" >> $sshconfig
     echo "   PasswordAuthentication no" >> $sshconfig
@@ -49,7 +49,7 @@ generate_config(){
     echo "Host $project_haproxy_server" >> $sshconfig
     echo "   User ubuntu" >> $sshconfig
     echo "   HostName $haproxyfip" >> $sshconfig
-    echo "   IdentityFile $ssh_key" >> $sshconfig
+    echo "   IdentityFile $ssh_private_key" >> $sshconfig
     echo "   StrictHostKeyChecking no" >> $sshconfig
     echo "   PasswordAuthentication no ">> $sshconfig
     echo "   ProxyJump $project_bastion_server" >> $sshconfig
@@ -74,7 +74,7 @@ generate_config(){
             echo "Host $server" >> $sshconfig
             echo "   User ubuntu" >> $sshconfig
             echo "   HostName $ip_address" >> $sshconfig
-            echo "   IdentityFile $ssh_key" >> $sshconfig
+            echo "   IdentityFile $ssh_private_key" >> $sshconfig
             echo "   UserKnownHostsFile=~/dev/null" >> $sshconfig
             echo "   StrictHostKeyChecking no" >> $sshconfig
             echo "   PasswordAuthentication no" >> $sshconfig
@@ -86,7 +86,7 @@ generate_config(){
     echo " " >> $hostsfile
     echo "[all:vars]" >> $hostsfile
     echo "ansible_user=ubuntu" >> $hostsfile
-    echo "ansible_ssh_private_key_file=$ssh_key" >> $hostsfile
+    echo "ansible_ssh_private_key_file=$ssh_private_key" >> $hostsfile
     echo "ansible_ssh_common_args=' -F $sshconfig '" >> $hostsfile
 }
 
